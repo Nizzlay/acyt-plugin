@@ -14,7 +14,7 @@ class ACYTPostType {
 
 	public function register_custom_post_type() {
 		$labels = array(
-			'name'               => 'YouTube Video\'s',
+			'name'               => 'Apple Videotips',
 			'singular_name'      => 'Video',
 			'add_new'            => 'Nieuwe video toevoegen',
 			'add_new_item'       => 'Nieuwe video toevoegen',
@@ -61,12 +61,14 @@ class ACYTPostType {
 	public function acyt_build_meta_box( $post ) {
 		wp_nonce_field( basename( __FILE__ ), 'acyt-yt-videoid_nonce' );
 
-		$current_yt_id = esc_html( get_post_meta( $post->ID, '_acyt-yt-videoid', true ) );
-		$publish_ts    = get_post_meta( $post->ID, '_acyt-original-publish-date', true );
-		$publish_date  = esc_html( strftime( "%c", $publish_ts ) );
+		$current_yt_id 				= esc_html( get_post_meta( $post->ID, '_acyt-yt-videoid', true ) );
+		$current_vtt_media_id = esc_html( get_post_meta( $post->ID, '_acyt_subtitle_file', true ) );
+		$publish_ts    				= get_post_meta( $post->ID, '_acyt-original-publish-date', true );
+		$publish_date  				= esc_html( strftime( "%c", $publish_ts ) );
 
 		$htmloutput = "<div class='inside'>";
 		$htmloutput .= "<p>ID: <input type='text' name='acyt-yt-videoid' value='" . $current_yt_id . "' /></p>";
+		$htmloutput .= "<p>VTT media ID: <input type='text' name='_acyt_subtitle_file' value='" . $current_vtt_media_id . "' /></p>";
 		$htmloutput .= "</div>";
 
 		echo $htmloutput;
@@ -74,7 +76,7 @@ class ACYTPostType {
 
 	// from https://wordpress.stackexchange.com/questions/40301/how-do-i-set-a-featured-image-thumbnail-by-image-url-when-using-wp-insert-post
 	protected function Generate_Featured_Image( $image_url, $post_id, $unique_part = NULL ) {
-		$unique_id  = uniqid( $Unique_part, true );
+		$unique_id  = uniqid( $unique_part, true );
 		$upload_dir = wp_upload_dir();
 		$image_data = file_get_contents( $image_url );
 		$filename   = pathinfo( basename( $image_url ), PATHINFO_FILENAME ) . "-" . $unique_id . "." . pathinfo( basename( $image_url ), PATHINFO_EXTENSION );
@@ -106,6 +108,8 @@ class ACYTPostType {
 		if ( ! isset( $_POST['acyt-yt-videoid_nonce'] ) || ! wp_verify_nonce( $_POST['acyt-yt-videoid_nonce'], basename( __FILE__ ) ) ) {
 			return $post_id;
 		}
+
+		update_post_meta($post_id, "_acyt_subtitle_file", $_POST["_acyt_subtitle_file"]);
 
 		/* Get the meta key. */
 		$meta_key = '_acyt-yt-videoid';
@@ -152,7 +156,18 @@ class ACYTPostType {
 		} elseif ( $new_meta_value and ! has_post_thumbnail( $post ) ) {
 			$data                  = file_get_contents( "https://www.googleapis.com/youtube/v3/videos?key=" . AC_YT_API_KEY . "&part=snippet&id=" . $new_meta_value );
 			$json                  = json_decode( $data );
-			$youtube_thumbnail_url = $json->items[0]->snippet->thumbnails->maxres->url;
+			$thumbs								= $json->items[0]->snippet->thumbnails;
+			// maxres thumb isn't always there for some reason, so just check for the highest resolution thumb
+			$largest_size = 0;
+			foreach($thumbs as $one_thumb_size)
+			{
+				$this_size = $one_thumb_size->width * $one_thumb_size->height;
+				if($this_size > $largest_size)
+				{
+					$largest_size 	= $this_size;
+					$youtube_thumbnail_url = $one_thumb_size->url;
+				}
+			}
 
 			$this->Generate_Featured_Image( $youtube_thumbnail_url, $post_id, $new_meta_value );
 		}
